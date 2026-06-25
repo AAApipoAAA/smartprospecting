@@ -196,5 +196,40 @@ echo "<span class='info'>IP de ce serveur : ".($_SERVER['SERVER_ADDR'] ?? gethos
 echo "<span class='info'>PHP : ".PHP_VERSION."</span><br>";
 echo "<span class='info'>Serveur : ".($_SERVER['SERVER_SOFTWARE'] ?? 'inconnu')."</span><br>";
 
+
+echo "<h3>7. Test forcé HTTP/1.1 (fix cURL 7.64)</h3>";
+$ch = curl_init($url);
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT        => 20,
+    CURLOPT_SSL_VERIFYPEER => true,
+    CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
+    CURLOPT_USERAGENT      => 'SmartProspecting/1.0',
+    CURLOPT_HTTPHEADER     => [
+        'X-INSEE-Api-Key-Integration: '.$apiKey,
+        'Accept: application/json',
+    ],
+]);
+$resp4 = curl_exec($ch);
+$code4 = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$err4  = curl_error($ch);
+curl_close($ch);
+if ($err4) {
+    echo "<span class='err'>❌ Toujours erreur : $err4</span><br>";
+} else {
+    echo "<span class='".(($code4 == 200) ? 'ok' : 'err')."'>HTTP $code4</span><br>";
+    if ($code4 == 200) {
+        $data4 = json_decode($resp4, true);
+        $nb4 = count($data4['etablissements'] ?? []);
+        echo "<span class='ok'>✅ SUCCÈS avec HTTP/1.1 ! $nb4 établissements</span><br>";
+        if ($nb4 > 0) {
+            echo '<pre>'.json_encode($data4['etablissements'][0]['uniteLegale'] ?? [], JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE).'</pre>';
+        }
+    } else {
+        echo '<pre>'.htmlspecialchars(substr($resp4, 0, 500)).'</pre>';
+    }
+}
 echo "<br><span style='color:red; font-weight:bold;'>⚠️ SUPPRIMEZ CE FICHIER APRÈS UTILISATION (diagnostic.php)</span>";
 ?>
+<?php
+// Ce bloc ne s'exécute pas (EOF déjà fermé), on va modifier directement

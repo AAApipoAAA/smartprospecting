@@ -242,6 +242,7 @@ class SmartProspectingSourceINSEE
             CURLOPT_USERAGENT      => 'SmartProspecting-Dolibarr/1.0',
             CURLOPT_HTTPHEADER     => $headers,
             CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_HTTP_VERSION   => CURL_HTTP_VERSION_1_1,
         ));
 
         $response = curl_exec($ch);
