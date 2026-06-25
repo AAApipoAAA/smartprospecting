@@ -77,11 +77,11 @@ if ($action === 'search' && !empty(GETPOST('search_source'))) {
 
         if ($source === 'insee') {
             $insee      = new SmartProspectingSourceINSEE($db);
-            $consKey    = sp_getConf('SMARTPROSPECTING_INSEE_CONSUMER_KEY');
-            $consSecret = sp_getConf('SMARTPROSPECTING_INSEE_CONSUMER_SECRET');
+            $consKey    = sp_getConf('SMARTPROSPECTING_INSEE_API_KEY');
+            $consSecret = '';
 
-            if (!empty($consKey) && !empty($consSecret)) {
-                $token = $insee->getToken($consKey, $consSecret);
+            if (!empty($consKey)) {
+                $insee->getToken($consKey, '');
                 if (!$token) {
                     setEventMessages('Impossible d\'obtenir le token INSEE. Vérifiez vos clés.', null, 'warnings');
                 }

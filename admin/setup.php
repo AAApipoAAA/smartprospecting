@@ -1,7 +1,6 @@
 <?php
 /**
  * Page de configuration SmartProspecting
- * Gestion des clés API et paramètres
  */
 
 $res = 0;
@@ -12,201 +11,191 @@ if (!$res && file_exists(__DIR__."/../../../../main.inc.php")) { $res = @include
 if (!$res) { die("Include of main fails"); }
 
 require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
-dol_include_once('/smartprospecting/lib/smartprospecting.lib.php');
 
-if (!isModEnabled('smartprospecting')) accessforbidden('Module SmartProspecting non activé');
-if (!$user->rights->smartprospecting->admin) accessforbidden();
+if (!isModEnabled('smartprospecting')) accessforbidden();
 if (!$user->admin) accessforbidden();
 
 $langs->loadLangs(array('smartprospecting@smartprospecting', 'admin'));
 $action = GETPOST('action', 'alpha');
 
-// Sauvegarde de la configuration
+// Sauvegarde
 if ($action === 'update') {
     $keys = array(
+        'SMARTPROSPECTING_INSEE_API_KEY',
         'SMARTPROSPECTING_PAPPERS_API_KEY',
         'SMARTPROSPECTING_GOOGLE_PLACES_API_KEY',
         'SMARTPROSPECTING_HUNTER_API_KEY',
         'SMARTPROSPECTING_DROPCONTACT_API_KEY',
-        'SMARTPROSPECTING_INSEE_CONSUMER_KEY',
-        'SMARTPROSPECTING_INSEE_CONSUMER_SECRET',
-        'SMARTPROSPECTING_DEFAULT_PROSPECT_STATUS',
         'SMARTPROSPECTING_IMPORT_BATCH_SIZE',
         'SMARTPROSPECTING_AUTO_DEDUP',
     );
-
     foreach ($keys as $key) {
         $value = GETPOST($key, 'nohtml');
-        dolibarr_set_const($db, $key, $value, 'chaine', 0, '', $conf->entity);
+        dolibarr_set_const($db, $key, trim($value), 'chaine', 0, '', $conf->entity);
     }
-
-    setEventMessages('Configuration sauvegardée avec succès.', null, 'mesgs');
+    setEventMessages('Configuration sauvegardée avec succès !', null, 'mesgs');
     header('Location: '.$_SERVER['PHP_SELF']);
     exit;
 }
 
-// =============================================
-// Affichage
-// =============================================
+// Helper compat
+function sp_conf($key, $default = '') {
+    global $conf;
+    if (function_exists('getDolGlobalString')) return getDolGlobalString($key, $default);
+    return isset($conf->global->$key) ? $conf->global->$key : $default;
+}
+
 llxHeader('', 'SmartProspecting - Configuration');
-
-$head = smartprospectingAdminPrepareHead();
-print dol_get_fiche_head($head, 'setup', 'SmartProspecting', -1, 'smartprospecting@smartprospecting');
-
-print load_fiche_titre('Configuration SmartProspecting', '', '');
-
+print load_fiche_titre('<i class="fas fa-cog"></i> Configuration SmartProspecting', '', '');
 ?>
 
 <form method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>">
 <input type="hidden" name="token" value="<?php echo newToken(); ?>">
 <input type="hidden" name="action" value="update">
 
-<!-- API INSEE SIRENE -->
-<div class="sp-api-section" style="background:#fff; border-radius:8px; padding:25px; margin-bottom:20px; border:1px solid #e0e0e0;">
-    <h3 style="margin-top:0; color:#2196F3; border-bottom:1px solid #eee; padding-bottom:10px;">
-        <i class="fas fa-university"></i> INSEE SIRENE — Source principale (gratuite)
+<!-- INSEE SIRENE -->
+<div style="background:#fff; border-radius:8px; padding:25px; margin-bottom:20px; border:1px solid #e0e0e0; box-shadow:0 1px 3px rgba(0,0,0,.05);">
+    <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:12px;">
+        <span style="background:#1565C0; color:#fff; padding:4px 12px; border-radius:4px; font-size:.9rem;">INSEE</span>
+        &nbsp; SIRENE v3.11 — Source principale gratuite
     </h3>
-    <p style="color:#666; font-size:.9rem;">
-        L'API SIRENE v3 nécessite un compte sur <a href="https://api.insee.fr" target="_blank">api.insee.fr</a> (inscription gratuite).
-        Le quota gratuit est de 30 requêtes/minute.
-    </p>
 
-    <table class="noborder" style="width:100%;">
+    <div style="background:#e3f2fd; border-radius:6px; padding:12px 15px; margin-bottom:18px; font-size:.9rem; color:#1565C0;">
+        <strong>Comment obtenir votre clé :</strong><br>
+        1. Allez sur <a href="https://api.insee.fr" target="_blank" style="color:#1565C0;"><strong>api.insee.fr</strong></a>
+        → Applications → votre app SmartProspecting<br>
+        2. Onglet "Souscriptions" → colonne de droite "<strong>Clés d'API</strong>"<br>
+        3. Copiez la clé (format : <code>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</code>)
+    </div>
+
+    <table style="width:100%;">
         <tr>
-            <td style="width:300px; padding:10px 0;"><label><strong>Consumer Key (INSEE)</strong></label></td>
+            <td style="width:220px; padding:8px 0; font-weight:bold;">Clé API INSEE (api key)</td>
             <td>
-                <input type="text" name="SMARTPROSPECTING_INSEE_CONSUMER_KEY"
-                    value="<?php echo dol_escape_htmltag(getDolGlobalString('SMARTPROSPECTING_INSEE_CONSUMER_KEY')); ?>"
-                    style="width:100%; max-width:500px; padding:8px; border:1px solid #ddd; border-radius:4px;"
-                    placeholder="Votre Consumer Key INSEE">
-            </td>
-        </tr>
-        <tr>
-            <td style="padding:10px 0;"><label><strong>Consumer Secret (INSEE)</strong></label></td>
-            <td>
-                <input type="password" name="SMARTPROSPECTING_INSEE_CONSUMER_SECRET"
-                    value="<?php echo dol_escape_htmltag(getDolGlobalString('SMARTPROSPECTING_INSEE_CONSUMER_SECRET')); ?>"
-                    style="width:100%; max-width:500px; padding:8px; border:1px solid #ddd; border-radius:4px;"
-                    placeholder="Votre Consumer Secret INSEE">
+                <input type="text" name="SMARTPROSPECTING_INSEE_API_KEY"
+                    value="<?php echo dol_escape_htmltag(sp_conf('SMARTPROSPECTING_INSEE_API_KEY')); ?>"
+                    style="width:100%; max-width:520px; padding:9px 12px; border:1px solid #ccc; border-radius:4px; font-family:monospace; font-size:.9rem;"
+                    placeholder="08d6c2b9-bf84-4492-96c2-b9t...">
+                <?php if (!empty(sp_conf('SMARTPROSPECTING_INSEE_API_KEY'))) : ?>
+                <span style="color:#4CAF50; font-size:.85rem; display:block; margin-top:4px;">✅ Clé configurée</span>
+                <?php else : ?>
+                <span style="color:#FF9800; font-size:.85rem; display:block; margin-top:4px;">⚠️ Clé manquante — les recherches ne fonctionneront pas</span>
+                <?php endif; ?>
             </td>
         </tr>
     </table>
-    <small style="color:#999;">
-        Sans token INSEE : la recherche fonctionne avec un quota très réduit (tests seulement).
-    </small>
 </div>
 
-<!-- API Pappers -->
-<div class="sp-api-section" style="background:#fff; border-radius:8px; padding:25px; margin-bottom:20px; border:1px solid #e0e0e0;">
-    <h3 style="margin-top:0; color:#4CAF50; border-bottom:1px solid #eee; padding-bottom:10px;">
-        <i class="fas fa-balance-scale"></i> Pappers.fr — Données légales enrichies
+<!-- Pappers -->
+<div style="background:#fff; border-radius:8px; padding:25px; margin-bottom:20px; border:1px solid #e0e0e0; box-shadow:0 1px 3px rgba(0,0,0,.05);">
+    <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:12px;">
+        <span style="background:#2E7D32; color:#fff; padding:4px 12px; border-radius:4px; font-size:.9rem;">PAPPERS</span>
+        &nbsp; Pappers.fr — Données enrichies + dirigeants
     </h3>
-    <p style="color:#666; font-size:.9rem;">
-        <a href="https://www.pappers.fr/api" target="_blank">Inscrivez-vous sur Pappers.fr</a> pour obtenir une clé API.
-        Quota gratuit : 500 requêtes/mois. Plans payants disponibles.
-    </p>
-    <table class="noborder" style="width:100%;">
+    <div style="background:#e8f5e9; border-radius:6px; padding:12px 15px; margin-bottom:18px; font-size:.9rem; color:#2E7D32;">
+        Inscription gratuite sur <a href="https://www.pappers.fr/api" target="_blank" style="color:#2E7D32;"><strong>pappers.fr/api</strong></a>
+        · Quota gratuit : 500 requêtes/mois · Enrichit les données INSEE (téléphone, email, dirigeants)
+    </div>
+    <table style="width:100%;">
         <tr>
-            <td style="width:300px; padding:10px 0;"><label><strong>Clé API Pappers</strong></label></td>
+            <td style="width:220px; padding:8px 0; font-weight:bold;">Clé API Pappers</td>
             <td>
                 <input type="text" name="SMARTPROSPECTING_PAPPERS_API_KEY"
-                    value="<?php echo dol_escape_htmltag(getDolGlobalString('SMARTPROSPECTING_PAPPERS_API_KEY')); ?>"
-                    style="width:100%; max-width:500px; padding:8px; border:1px solid #ddd; border-radius:4px;"
-                    placeholder="Votre clé API Pappers">
+                    value="<?php echo dol_escape_htmltag(sp_conf('SMARTPROSPECTING_PAPPERS_API_KEY')); ?>"
+                    style="width:100%; max-width:520px; padding:9px 12px; border:1px solid #ccc; border-radius:4px; font-family:monospace; font-size:.9rem;"
+                    placeholder="Votre clé API Pappers.fr">
+                <?php if (!empty(sp_conf('SMARTPROSPECTING_PAPPERS_API_KEY'))) : ?>
+                <span style="color:#4CAF50; font-size:.85rem; display:block; margin-top:4px;">✅ Clé configurée</span>
+                <?php endif; ?>
             </td>
         </tr>
     </table>
 </div>
 
-<!-- API Google Places -->
-<div class="sp-api-section" style="background:#fff; border-radius:8px; padding:25px; margin-bottom:20px; border:1px solid #e0e0e0;">
-    <h3 style="margin-top:0; color:#FF9800; border-bottom:1px solid #eee; padding-bottom:10px;">
-        <i class="fab fa-google"></i> Google Places API — Recherche géographique
+<!-- Google Places -->
+<div style="background:#fff; border-radius:8px; padding:25px; margin-bottom:20px; border:1px solid #e0e0e0; box-shadow:0 1px 3px rgba(0,0,0,.05); opacity:.8;">
+    <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:12px;">
+        <span style="background:#E65100; color:#fff; padding:4px 12px; border-radius:4px; font-size:.9rem;">GOOGLE</span>
+        &nbsp; Google Places — Recherche géographique <small style="color:#999;">(prochainement)</small>
     </h3>
-    <p style="color:#666; font-size:.9rem;">
-        Créez une clé sur <a href="https://console.cloud.google.com" target="_blank">Google Cloud Console</a>.
-        Activer : "Places API" et "Geocoding API". Tarification à l'usage (~0,017$/requête).
-    </p>
-    <table class="noborder" style="width:100%;">
+    <table style="width:100%;">
         <tr>
-            <td style="width:300px; padding:10px 0;"><label><strong>Clé API Google Places</strong></label></td>
+            <td style="width:220px; padding:8px 0; font-weight:bold;">Clé API Google Places</td>
             <td>
                 <input type="text" name="SMARTPROSPECTING_GOOGLE_PLACES_API_KEY"
-                    value="<?php echo dol_escape_htmltag(getDolGlobalString('SMARTPROSPECTING_GOOGLE_PLACES_API_KEY')); ?>"
-                    style="width:100%; max-width:500px; padding:8px; border:1px solid #ddd; border-radius:4px;"
+                    value="<?php echo dol_escape_htmltag(sp_conf('SMARTPROSPECTING_GOOGLE_PLACES_API_KEY')); ?>"
+                    style="width:100%; max-width:520px; padding:9px 12px; border:1px solid #ccc; border-radius:4px; font-family:monospace; font-size:.9rem;"
                     placeholder="AIzaSy...">
             </td>
         </tr>
     </table>
 </div>
 
-<!-- API Enrichissement email -->
-<div class="sp-api-section" style="background:#fff; border-radius:8px; padding:25px; margin-bottom:20px; border:1px solid #e0e0e0;">
-    <h3 style="margin-top:0; color:#9C27B0; border-bottom:1px solid #eee; padding-bottom:10px;">
-        <i class="fas fa-at"></i> Enrichissement Email (optionnel)
+<!-- Enrichissement email -->
+<div style="background:#fff; border-radius:8px; padding:25px; margin-bottom:20px; border:1px solid #e0e0e0; box-shadow:0 1px 3px rgba(0,0,0,.05);">
+    <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:12px;">
+        <span style="background:#6A1B9A; color:#fff; padding:4px 12px; border-radius:4px; font-size:.9rem;">EMAIL</span>
+        &nbsp; Enrichissement emails — Hunter.io ou Dropcontact
     </h3>
-    <p style="color:#666; font-size:.9rem;">
-        Choisissez Hunter.io OU Dropcontact pour trouver les emails professionnels.
-    </p>
-    <table class="noborder" style="width:100%;">
+    <table style="width:100%;">
         <tr>
-            <td style="width:300px; padding:10px 0;"><label><strong>Clé API Hunter.io</strong></label></td>
+            <td style="width:220px; padding:8px 0; font-weight:bold;">Clé API Hunter.io</td>
             <td>
                 <input type="text" name="SMARTPROSPECTING_HUNTER_API_KEY"
-                    value="<?php echo dol_escape_htmltag(getDolGlobalString('SMARTPROSPECTING_HUNTER_API_KEY')); ?>"
-                    style="width:100%; max-width:500px; padding:8px; border:1px solid #ddd; border-radius:4px;"
-                    placeholder="Clé Hunter.io (facultatif)">
+                    value="<?php echo dol_escape_htmltag(sp_conf('SMARTPROSPECTING_HUNTER_API_KEY')); ?>"
+                    style="width:100%; max-width:520px; padding:9px 12px; border:1px solid #ccc; border-radius:4px; font-family:monospace; font-size:.9rem;"
+                    placeholder="hunter.io API key (facultatif)">
             </td>
         </tr>
         <tr>
-            <td style="padding:10px 0;"><label><strong>Clé API Dropcontact</strong></label></td>
+            <td style="padding:8px 0; font-weight:bold;">Clé API Dropcontact</td>
             <td>
                 <input type="text" name="SMARTPROSPECTING_DROPCONTACT_API_KEY"
-                    value="<?php echo dol_escape_htmltag(getDolGlobalString('SMARTPROSPECTING_DROPCONTACT_API_KEY')); ?>"
-                    style="width:100%; max-width:500px; padding:8px; border:1px solid #ddd; border-radius:4px;"
-                    placeholder="Clé Dropcontact (facultatif)">
+                    value="<?php echo dol_escape_htmltag(sp_conf('SMARTPROSPECTING_DROPCONTACT_API_KEY')); ?>"
+                    style="width:100%; max-width:520px; padding:9px 12px; border:1px solid #ccc; border-radius:4px; font-family:monospace; font-size:.9rem;"
+                    placeholder="dropcontact.com API key (facultatif)">
             </td>
         </tr>
     </table>
 </div>
 
-<!-- Paramètres généraux -->
-<div class="sp-api-section" style="background:#fff; border-radius:8px; padding:25px; margin-bottom:20px; border:1px solid #e0e0e0;">
-    <h3 style="margin-top:0; color:#333; border-bottom:1px solid #eee; padding-bottom:10px;">
+<!-- Paramètres -->
+<div style="background:#fff; border-radius:8px; padding:25px; margin-bottom:25px; border:1px solid #e0e0e0; box-shadow:0 1px 3px rgba(0,0,0,.05);">
+    <h3 style="margin-top:0; border-bottom:1px solid #eee; padding-bottom:12px;">
         <i class="fas fa-sliders-h"></i> Paramètres généraux
     </h3>
-    <table class="noborder" style="width:100%;">
+    <table style="width:100%;">
         <tr>
-            <td style="width:300px; padding:10px 0;"><label><strong>Taille des batches d'import</strong></label></td>
+            <td style="width:220px; padding:8px 0; font-weight:bold;">Taille des batches</td>
             <td>
                 <input type="number" name="SMARTPROSPECTING_IMPORT_BATCH_SIZE" min="10" max="200"
-                    value="<?php echo (int)getDolGlobalInt('SMARTPROSPECTING_IMPORT_BATCH_SIZE', 50); ?>"
-                    style="width:100px; padding:8px; border:1px solid #ddd; border-radius:4px;">
-                <small style="color:#999; margin-left:10px;">Prospects traités par lot (recommandé : 50)</small>
+                    value="<?php echo (int)(sp_conf('SMARTPROSPECTING_IMPORT_BATCH_SIZE') ?: 50); ?>"
+                    style="width:100px; padding:9px; border:1px solid #ccc; border-radius:4px;">
+                <small style="color:#999; margin-left:10px;">prospects traités par lot (recommandé : 50)</small>
             </td>
         </tr>
         <tr>
-            <td style="padding:10px 0;"><label><strong>Déduplication automatique</strong></label></td>
+            <td style="padding:8px 0; font-weight:bold;">Déduplication auto</td>
             <td>
-                <label style="cursor:pointer;">
+                <label style="cursor:pointer; display:flex; align-items:center; gap:8px;">
                     <input type="checkbox" name="SMARTPROSPECTING_AUTO_DEDUP" value="1"
-                        <?php echo getDolGlobalInt('SMARTPROSPECTING_AUTO_DEDUP', 1) ? 'checked' : ''; ?>>
-                    Éviter les doublons par SIRET et nom
+                        <?php echo (sp_conf('SMARTPROSPECTING_AUTO_DEDUP', '1') == '1') ? 'checked' : ''; ?>
+                        style="width:16px; height:16px;">
+                    Éviter les doublons par SIRET et nom d'entreprise
                 </label>
             </td>
         </tr>
     </table>
 </div>
 
-<!-- Bouton de sauvegarde -->
-<div style="text-align:center; padding:20px;">
-    <input type="submit" value="💾 Enregistrer la configuration" class="butAction" style="padding:12px 40px; font-size:1rem;">
+<div style="text-align:center; padding:10px 0 30px;">
+    <input type="submit" value="💾  Enregistrer la configuration" class="butAction"
+        style="padding:13px 45px; font-size:1.05rem; cursor:pointer; min-width:280px;">
 </div>
 
 </form>
 
 <?php
-print dol_get_fiche_end();
 llxFooter();
 $db->close();
 ?>

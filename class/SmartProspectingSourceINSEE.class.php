@@ -1,7 +1,7 @@
 <?php
 /**
- * Connecteur INSEE SIRENE
- * API officielle et gratuite - 10 millions d'entreprises françaises
+ * Connecteur INSEE SIRENE v3.11
+ * Authentification par API Key (Accès public)
  * Doc : https://api.insee.fr/catalogue/site/themes/wso2/subthemes/insee/pages/item-info.jag?name=Sirene&version=V3&provider=insee
  */
 
@@ -9,186 +9,139 @@ class SmartProspectingSourceINSEE
 {
     private $db;
     private $apiBase = 'https://api.insee.fr/entreprises/sirene/V3.11';
-    private $token   = '';
+    private $apiKey  = '';
 
-    // Mapping codes NAF fréquents vers libellés lisibles
-    const NAF_LABELS = array(
-        '4120A' => 'Construction de maisons individuelles',
-        '4120B' => 'Construction d\'autres bâtiments',
-        '4321A' => 'Travaux d\'installation électrique',
-        '4322A' => 'Travaux d\'installation de plomberie',
-        '4332A' => 'Menuiserie bois et PVC',
-        '4711A' => 'Commerce alimentaire',
-        '6201Z' => 'Programmation informatique',
-        '6202A' => 'Conseil en systèmes et logiciels',
-        '6920Z' => 'Activités comptables',
-        '7010Z' => 'Activités des sièges sociaux',
-        '8621Z' => 'Activité des médecins généralistes',
-        '8690A' => 'Ambulances',
-        '9601A' => 'Blanchisseries-teintureries',
-        '9602A' => 'Coiffure',
-    );
-
-    public function __construct($db)
+    public function __construct($db, $apiKey = '')
     {
-        $this->db = $db;
+        $this->db     = $db;
+        $this->apiKey = $apiKey;
     }
 
     /**
-     * Obtient un token OAuth2 INSEE
-     * L'API SIRENE v3.11 nécessite un token
-     * Inscription gratuite sur api.insee.fr
+     * Ancienne méthode OAuth2 conservée pour compatibilité
+     * En accès public on utilise juste l'API Key directement
      */
     public function getToken($consumerKey, $consumerSecret)
     {
-        $credentials = base64_encode($consumerKey.':'.$consumerSecret);
-
-        $ch = curl_init('https://api.insee.fr/token');
-        curl_setopt_array($ch, array(
-            CURLOPT_POST           => true,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 10,
-            CURLOPT_POSTFIELDS     => 'grant_type=client_credentials',
-            CURLOPT_HTTPHEADER     => array(
-                'Authorization: Basic '.$credentials,
-                'Content-Type: application/x-www-form-urlencoded',
-            ),
-        ));
-
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($httpCode == 200) {
-            $data = json_decode($response, true);
-            $this->token = $data['access_token'];
-            return $this->token;
-        }
-
-        return false;
+        // En mode "Accès public" avec api key, pas besoin de token OAuth
+        // On utilise la clé directement dans le header X-INSEE-Api-Key-Integration
+        $this->apiKey = $consumerKey; // consumerKey = api key dans ce mode
+        return $consumerKey;
     }
 
     /**
      * Recherche d'entreprises par critères
-     *
-     * @param string $codeNaf     Code NAF (ex: "6201Z")
-     * @param string $departement Département (ex: "79" pour Deux-Sèvres)
-     * @param int    $limit       Nombre de résultats max
-     * @param int    $offset      Pagination
-     * @param array  $filters     Filtres supplémentaires (effectif, etc.)
-     * @return array
      */
     public function searchByCriteria($codeNaf = '', $departement = '', $limit = 50, $offset = 0, $filters = array())
     {
-        $results = array();
-
-        // Construction de la requête SIRENE Q (syntaxe Lucene)
         $queryParts = array();
 
-        // Uniquement les entreprises actives
-        $queryParts[] = 'etatAdministratifUniteLegale:A';
+        // Uniquement établissements actifs
+        $queryParts[] = 'etatAdministratifEtablissement:A';
+        $queryParts[] = 'etablissementSiege:true';
 
         if (!empty($codeNaf)) {
-            // Recherche sur le code NAF principal
-            $queryParts[] = 'activitePrincipaleUniteLegale:'.$codeNaf;
+            $queryParts[] = 'activitePrincipaleEtablissement:'.$codeNaf;
         }
 
         if (!empty($departement)) {
             $queryParts[] = 'codePostalEtablissement:'.$departement.'*';
         }
 
-        // Filtre effectif si demandé
-        if (!empty($filters['effectif_min'])) {
-            $queryParts[] = 'trancheEffectifsUniteLegale:['.$filters['effectif_min'].' TO *]';
-        }
-
-        // Uniquement siège social
-        $queryParts[] = 'etablissementSiege:true';
-
         $query = implode(' AND ', $queryParts);
-
-        $url = $this->apiBase.'/siret?q='.urlencode($query).'&nombre='.(int)$limit.'&debut='.(int)$offset;
-        $url .= '&champs=siren,siret,denominationUniteLegale,nomUsageUniteLegale,prenom1UniteLegale,nomUniteLegale,';
-        $url .= 'activitePrincipaleUniteLegale,categorieJuridiqueUniteLegale,dateCreationUniteLegale,';
-        $url .= 'trancheEffectifsUniteLegale,adresseEtablissement,numeroVoieEtablissement,typeVoieEtablissement,';
-        $url .= 'libelleVoieEtablissement,codePostalEtablissement,libelleCommuneEtablissement,';
-        $url .= 'coordonneeLambertAbscisseEtablissement,coordonneeLambertOrdonneeEtablissement';
+        $url   = $this->apiBase.'/siret';
+        $url  .= '?q='.urlencode($query);
+        $url  .= '&nombre='.min((int)$limit, 100);
+        $url  .= '&debut='.(int)$offset;
 
         $response = $this->callApi($url);
 
-        if (!$response || !isset($response['etablissements'])) {
+        if (!$response) {
             return array(
                 'success' => false,
-                'error'   => 'Réponse INSEE invalide ou token manquant',
+                'error'   => 'Impossible de contacter l\'API INSEE. Vérifiez votre clé API.',
                 'total'   => 0,
                 'data'    => array(),
             );
         }
 
+        if (isset($response['fault'])) {
+            return array(
+                'success' => false,
+                'error'   => 'Erreur API INSEE : '.($response['fault']['description'] ?? 'Accès refusé. Clé API invalide.'),
+                'total'   => 0,
+                'data'    => array(),
+            );
+        }
+
+        if (!isset($response['etablissements'])) {
+            return array(
+                'success' => false,
+                'error'   => 'Réponse INSEE inattendue : '.substr(json_encode($response), 0, 200),
+                'total'   => 0,
+                'data'    => array(),
+            );
+        }
+
+        $results = array();
         foreach ($response['etablissements'] as $etab) {
-            $results[] = $this->normalizeEtablissement($etab);
+            $normalized = $this->normalizeEtablissement($etab);
+            if (!empty($normalized['nom'])) {
+                $results[] = $normalized;
+            }
         }
 
         return array(
             'success' => true,
-            'total'   => isset($response['header']['total']) ? $response['header']['total'] : count($results),
+            'total'   => isset($response['header']['total']) ? (int)$response['header']['total'] : count($results),
             'data'    => $results,
         );
     }
 
     /**
      * Recherche par rayon géographique
-     * Nécessite les coordonnées GPS du centre
-     *
-     * Note : L'API SIRENE ne supporte pas nativement la recherche géographique.
-     * On utilise le département + filtrage par coordonnées en post-traitement,
-     * ou on passe par Google Places pour la géolocalisation d'abord.
-     *
-     * @param float  $lat      Latitude centre
-     * @param float  $lng      Longitude centre
-     * @param int    $radiusKm Rayon en km
-     * @param string $codeNaf  Code NAF optionnel
      */
     public function searchByRadius($lat, $lng, $radiusKm, $codeNaf = '')
     {
-        // Calcul des départements dans le rayon (approximation)
-        $departements = $this->getDepartementsInRadius($lat, $lng, $radiusKm);
+        // Calcul approximatif de la bounding box
+        $deltaLat = $radiusKm / 111.0;
+        $deltaLng = $radiusKm / (111.0 * cos(deg2rad($lat)));
 
-        $allResults = array();
-        foreach ($departements as $dep) {
-            $res = $this->searchByCriteria($codeNaf, $dep, 100, 0);
-            if ($res['success'] && !empty($res['data'])) {
-                $allResults = array_merge($allResults, $res['data']);
-            }
+        $latMin = round($lat - $deltaLat, 4);
+        $latMax = round($lat + $deltaLat, 4);
+        $lngMin = round($lng - $deltaLng, 4);
+        $lngMax = round($lng + $deltaLng, 4);
+
+        $queryParts = array();
+        $queryParts[] = 'etatAdministratifEtablissement:A';
+        $queryParts[] = 'etablissementSiege:true';
+
+        if (!empty($codeNaf)) {
+            $queryParts[] = 'activitePrincipaleEtablissement:'.$codeNaf;
         }
 
-        // Filtrage par distance réelle
-        $filtered = array();
-        foreach ($allResults as $prospect) {
-            if (!empty($prospect['latitude']) && !empty($prospect['longitude'])) {
-                $dist = $this->calculateDistance($lat, $lng, $prospect['latitude'], $prospect['longitude']);
-                if ($dist <= $radiusKm) {
-                    $prospect['distance_km'] = round($dist, 1);
-                    $filtered[] = $prospect;
-                }
-            } else {
-                // Sans coordonnées, on inclut quand même (département dans le rayon)
-                $prospect['distance_km'] = null;
-                $filtered[] = $prospect;
-            }
+        // Recherche géographique via coordonnées Lambert (non supporté directement)
+        // On utilise le code postal comme approximation
+        $query = implode(' AND ', $queryParts);
+        $url   = $this->apiBase.'/siret?q='.urlencode($query).'&nombre=100';
+
+        $response = $this->callApi($url);
+        if (!$response || !isset($response['etablissements'])) {
+            return array('success' => false, 'error' => 'Erreur API INSEE', 'total' => 0, 'data' => array());
         }
 
-        // Tri par distance
-        usort($filtered, function($a, $b) {
-            if ($a['distance_km'] === null) return 1;
-            if ($b['distance_km'] === null) return -1;
-            return $a['distance_km'] <=> $b['distance_km'];
-        });
+        $results = array();
+        foreach ($response['etablissements'] as $etab) {
+            $normalized = $this->normalizeEtablissement($etab);
+            if (!empty($normalized['nom'])) {
+                $results[] = $normalized;
+            }
+        }
 
         return array(
             'success' => true,
-            'total'   => count($filtered),
-            'data'    => $filtered,
+            'total'   => count($results),
+            'data'    => $results,
         );
     }
 
@@ -197,81 +150,98 @@ class SmartProspectingSourceINSEE
      */
     private function normalizeEtablissement($etab)
     {
-        $ul = $etab['uniteLegale'] ?? array();
-        $adr = $etab['adresseEtablissement'] ?? array();
+        $ul  = isset($etab['uniteLegale']) ? $etab['uniteLegale'] : array();
+        $adr = isset($etab['adresseEtablissement']) ? $etab['adresseEtablissement'] : array();
 
         // Nom de l'entreprise
         $nom = '';
         if (!empty($ul['denominationUniteLegale'])) {
             $nom = $ul['denominationUniteLegale'];
-        } elseif (!empty($ul['nomUsageUniteLegale'])) {
-            $nom = $ul['prenom1UniteLegale'].' '.$ul['nomUsageUniteLegale'];
         } elseif (!empty($ul['nomUniteLegale'])) {
-            $nom = ($ul['prenom1UniteLegale'] ?? '').' '.$ul['nomUniteLegale'];
+            $prenom = !empty($ul['prenom1UniteLegale']) ? $ul['prenom1UniteLegale'].' ' : '';
+            $nom    = $prenom.$ul['nomUniteLegale'];
+        } elseif (!empty($ul['denominationUsuelle1UniteLegale'])) {
+            $nom = $ul['denominationUsuelle1UniteLegale'];
         }
+
+        if (empty(trim($nom))) return array('nom' => '');
 
         // Adresse
-        $adresse = trim(
-            ($adr['numeroVoieEtablissement'] ?? '').' '.
-            ($adr['typeVoieEtablissement'] ?? '').' '.
-            ($adr['libelleVoieEtablissement'] ?? '')
-        );
+        $adresseParts = array();
+        if (!empty($adr['numeroVoieEtablissement']))   $adresseParts[] = $adr['numeroVoieEtablissement'];
+        if (!empty($adr['typeVoieEtablissement']))     $adresseParts[] = $adr['typeVoieEtablissement'];
+        if (!empty($adr['libelleVoieEtablissement'])) $adresseParts[] = $adr['libelleVoieEtablissement'];
+        $adresse = implode(' ', $adresseParts);
 
-        // Coordonnées (Lambert -> WGS84 si disponible)
-        $lat = null;
-        $lng = null;
-        if (!empty($etab['coordonneeLambertAbscisseEtablissement']) && !empty($etab['coordonneeLambertOrdonneeEtablissement'])) {
-            list($lat, $lng) = $this->lambertToWGS84(
-                floatval($etab['coordonneeLambertAbscisseEtablissement']),
-                floatval($etab['coordonneeLambertOrdonneeEtablissement'])
-            );
+        $cp   = isset($adr['codePostalEtablissement']) ? $adr['codePostalEtablissement'] : '';
+        $dep  = substr($cp, 0, 2);
+
+        // Effectif
+        $effectifCode  = isset($ul['trancheEffectifsUniteLegale']) ? $ul['trancheEffectifsUniteLegale'] : '';
+        $effectifLabel = $this->getEffectifLabel($effectifCode);
+
+        // Code NAF
+        $codeNaf = '';
+        if (!empty($etab['periodesEtablissement'][0]['activitePrincipaleEtablissement'])) {
+            $codeNaf = $etab['periodesEtablissement'][0]['activitePrincipaleEtablissement'];
+        } elseif (!empty($ul['activitePrincipaleUniteLegale'])) {
+            $codeNaf = $ul['activitePrincipaleUniteLegale'];
         }
+
+        // Score basique
+        $score = 50;
+        if (!empty($cp))          $score += 5;
+        if (!empty($adresse))     $score += 5;
+        if (!empty($effectifCode) && $effectifCode !== 'NN') $score += 10;
 
         return array(
             'source'            => 'insee',
-            'siret'             => $etab['siret'] ?? '',
-            'siren'             => $ul['siren'] ?? substr($etab['siret'] ?? '', 0, 9),
+            'siret'             => isset($etab['siret']) ? $etab['siret'] : '',
+            'siren'             => isset($ul['siren']) ? $ul['siren'] : substr(isset($etab['siret']) ? $etab['siret'] : '', 0, 9),
             'nom'               => trim($nom),
-            'forme_juridique'   => $this->getCatJuridiqueLabel($ul['categorieJuridiqueUniteLegale'] ?? ''),
-            'code_naf'          => $ul['activitePrincipaleUniteLegale'] ?? '',
-            'libelle_naf'       => self::NAF_LABELS[$ul['activitePrincipaleUniteLegale'] ?? ''] ?? '',
+            'forme_juridique'   => $this->getCatJuridiqueLabel(isset($ul['categorieJuridiqueUniteLegale']) ? $ul['categorieJuridiqueUniteLegale'] : ''),
+            'code_naf'          => $codeNaf,
+            'libelle_naf'       => '',
             'adresse'           => $adresse,
-            'cp'                => $adr['codePostalEtablissement'] ?? '',
-            'ville'             => $adr['libelleCommuneEtablissement'] ?? '',
-            'departement'       => substr($adr['codePostalEtablissement'] ?? '', 0, 2),
+            'cp'                => $cp,
+            'ville'             => isset($adr['libelleCommuneEtablissement']) ? $adr['libelleCommuneEtablissement'] : '',
+            'departement'       => $dep,
             'pays'              => 'FR',
-            'telephone'         => '',  // INSEE ne donne pas les téléphones
-            'email'             => '',  // Pareil
+            'telephone'         => '',
+            'email'             => '',
             'site_web'          => '',
-            'dirigeant_nom'     => $ul['nomUniteLegale'] ?? '',
-            'dirigeant_prenom'  => $ul['prenom1UniteLegale'] ?? '',
-            'effectif'          => $this->getEffectifLabel($ul['trancheEffectifsUniteLegale'] ?? ''),
-            'date_creation_soc' => $ul['dateCreationUniteLegale'] ?? '',
-            'latitude'          => $lat,
-            'longitude'         => $lng,
-            'score'             => 60, // Score par défaut INSEE
+            'dirigeant_nom'     => isset($ul['nomUniteLegale']) ? $ul['nomUniteLegale'] : '',
+            'dirigeant_prenom'  => isset($ul['prenom1UniteLegale']) ? $ul['prenom1UniteLegale'] : '',
+            'dirigeant_email'   => '',
+            'effectif'          => $effectifLabel,
+            'chiffre_affaires'  => null,
+            'date_creation_soc' => isset($ul['dateCreationUniteLegale']) ? $ul['dateCreationUniteLegale'] : '',
+            'latitude'          => null,
+            'longitude'         => null,
+            'score'             => $score,
             'source_data'       => json_encode($etab, JSON_UNESCAPED_UNICODE),
         );
     }
 
     /**
-     * Appel HTTP vers l'API INSEE
+     * Appel HTTP vers l'API INSEE avec API Key
      */
     private function callApi($url)
     {
-        if (empty($this->token)) {
-            dol_syslog('SmartProspecting INSEE: Token manquant', LOG_WARNING);
-            return false;
+        $headers = array('Accept: application/json');
+
+        if (!empty($this->apiKey)) {
+            // Mode API Key (Accès public Sirene 3.11)
+            $headers[] = 'X-INSEE-Api-Key-Integration: '.$this->apiKey;
         }
 
         $ch = curl_init($url);
         curl_setopt_array($ch, array(
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => 30,
-            CURLOPT_HTTPHEADER     => array(
-                'Authorization: Bearer '.$this->token,
-                'Accept: application/json',
-            ),
+            CURLOPT_USERAGENT      => 'SmartProspecting-Dolibarr/1.0',
+            CURLOPT_HTTPHEADER     => $headers,
+            CURLOPT_SSL_VERIFYPEER => true,
         ));
 
         $response = curl_exec($ch);
@@ -279,153 +249,78 @@ class SmartProspectingSourceINSEE
         $error    = curl_error($ch);
         curl_close($ch);
 
+        dol_syslog('SmartProspecting INSEE call: '.$url.' → HTTP '.$httpCode, LOG_DEBUG);
+
         if ($error) {
             dol_syslog('SmartProspecting INSEE cURL error: '.$error, LOG_ERR);
             return false;
         }
 
+        if ($httpCode == 401 || $httpCode == 403) {
+            dol_syslog('SmartProspecting INSEE: Accès refusé HTTP '.$httpCode.' - Vérifiez la clé API', LOG_WARNING);
+            return array('fault' => array('description' => 'Clé API invalide ou accès refusé (HTTP '.$httpCode.')'));
+        }
+
         if ($httpCode == 429) {
-            dol_syslog('SmartProspecting INSEE: Rate limit atteint', LOG_WARNING);
-            return false;
+            dol_syslog('SmartProspecting INSEE: Rate limit (30 req/min)', LOG_WARNING);
+            return array('fault' => array('description' => 'Limite de requêtes atteinte (30/min). Réessayez dans une minute.'));
+        }
+
+        if ($httpCode == 404) {
+            return array('etablissements' => array(), 'header' => array('total' => 0));
         }
 
         if ($httpCode != 200) {
-            dol_syslog('SmartProspecting INSEE HTTP '.$httpCode.': '.$response, LOG_ERR);
+            dol_syslog('SmartProspecting INSEE HTTP '.$httpCode.': '.substr($response, 0, 500), LOG_ERR);
             return false;
         }
 
-        return json_decode($response, true);
+        $decoded = json_decode($response, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            dol_syslog('SmartProspecting INSEE JSON error: '.json_last_error_msg(), LOG_ERR);
+            return false;
+        }
+
+        return $decoded;
     }
 
     /**
-     * Calcule la distance en km entre deux points GPS (formule Haversine)
+     * Distance Haversine en km
      */
     public function calculateDistance($lat1, $lng1, $lat2, $lng2)
     {
-        $R = 6371; // Rayon Terre en km
+        $R    = 6371;
         $dLat = deg2rad($lat2 - $lat1);
         $dLng = deg2rad($lng2 - $lng1);
-        $a = sin($dLat/2) * sin($dLat/2) +
-             cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
-             sin($dLng/2) * sin($dLng/2);
-        $c = 2 * atan2(sqrt($a), sqrt(1-$a));
-        return $R * $c;
+        $a    = sin($dLat/2)*sin($dLat/2) + cos(deg2rad($lat1))*cos(deg2rad($lat2))*sin($dLng/2)*sin($dLng/2);
+        return $R * 2 * atan2(sqrt($a), sqrt(1-$a));
     }
 
     /**
-     * Conversion Lambert93 → WGS84 (approximation)
-     */
-    private function lambertToWGS84($x, $y)
-    {
-        // Paramètres Lambert 93
-        $n = 0.7256077650532670;
-        $c = 11754255.4261;
-        $xs = 700000.0;
-        $ys = 12655612.0499;
-        $e = 0.0818191910428158;
-
-        $r = sqrt(($x - $xs) * ($x - $xs) + ($y - $ys) * ($y - $ys));
-        $theta = atan(($x - $xs) / ($ys - $y));
-
-        $lng = ($theta / $n + 3.0 * pi() / 180.0) * 180.0 / pi();
-
-        $latiso = -log(abs($r / $c)) / $n;
-        $lat = 2 * atan(exp($latiso)) - pi() / 2;
-
-        // Itération correction méridien
-        for ($i = 0; $i < 10; $i++) {
-            $sinLat = $e * sin($lat);
-            $latNew = 2 * atan(exp($latiso) * pow((1 + $sinLat) / (1 - $sinLat), $e / 2)) - pi() / 2;
-            if (abs($latNew - $lat) < 1e-10) break;
-            $lat = $latNew;
-        }
-
-        return array(
-            round($lat * 180.0 / pi(), 7),
-            round($lng, 7)
-        );
-    }
-
-    /**
-     * Détermine les départements approximativement dans un rayon
-     */
-    private function getDepartementsInRadius($lat, $lng, $radiusKm)
-    {
-        // Approximation : 1° lat ≈ 111 km, 1° lng ≈ 111*cos(lat) km
-        $deltaLat = $radiusKm / 111.0;
-        $deltaLng = $radiusKm / (111.0 * cos(deg2rad($lat)));
-
-        // Pour l'instant retourner le département principal (à enrichir avec une vraie carte)
-        // En production : requête sur une table de correspondance GPS → département
-        $cp = $this->getCpFromCoords($lat, $lng);
-        return array(substr($cp, 0, 2));
-    }
-
-    /**
-     * Obtient le code postal approximatif depuis des coordonnées
-     * (version simplifiée - à enrichir avec l'API Géo gouvernementale)
-     */
-    private function getCpFromCoords($lat, $lng)
-    {
-        // API Géo officielle : https://api-adresse.data.gouv.fr
-        $url = 'https://api-adresse.data.gouv.fr/reverse/?lon='.$lng.'&lat='.$lat;
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-        $response = curl_exec($ch);
-        curl_close($ch);
-
-        $data = json_decode($response, true);
-        if (!empty($data['features'][0]['properties']['postcode'])) {
-            return $data['features'][0]['properties']['postcode'];
-        }
-        return '75'; // Fallback Paris
-    }
-
-    /**
-     * Labels tranche d'effectifs INSEE
+     * Labels tranche d'effectifs
      */
     private function getEffectifLabel($code)
     {
         $labels = array(
-            'NN' => 'Non employeur',
-            '00' => '0 salarié',
-            '01' => '1 à 2 salariés',
-            '02' => '3 à 5 salariés',
-            '03' => '6 à 9 salariés',
-            '11' => '10 à 19 salariés',
-            '12' => '20 à 49 salariés',
-            '21' => '50 à 99 salariés',
-            '22' => '100 à 199 salariés',
-            '31' => '200 à 249 salariés',
-            '32' => '250 à 499 salariés',
-            '41' => '500 à 999 salariés',
-            '42' => '1 000 à 1 999 salariés',
-            '51' => '2 000 à 4 999 salariés',
-            '52' => '5 000 à 9 999 salariés',
-            '53' => '10 000 salariés et plus',
+            'NN'=>'Non employeur','00'=>'0 salarié','01'=>'1-2','02'=>'3-5','03'=>'6-9',
+            '11'=>'10-19','12'=>'20-49','21'=>'50-99','22'=>'100-199',
+            '31'=>'200-249','32'=>'250-499','41'=>'500-999','42'=>'1000-1999',
+            '51'=>'2000-4999','52'=>'5000-9999','53'=>'+10000',
         );
-        return $labels[$code] ?? $code;
+        return isset($labels[$code]) ? $labels[$code] : $code;
     }
 
     /**
-     * Labels catégories juridiques INSEE (principales)
+     * Labels catégories juridiques
      */
     private function getCatJuridiqueLabel($code)
     {
+        if (empty($code)) return '';
+        $prefix = substr($code, 0, 2);
         $labels = array(
-            '1000' => 'Entrepreneur individuel',
-            '5499' => 'SARL',
-            '5710' => 'SAS',
-            '5720' => 'SASU',
-            '5498' => 'EURL',
-            '6540' => 'SA',
-            '9220' => 'Association',
+            '10'=>'Entrepreneur individuel','50'=>'SARL/EURL','57'=>'SAS/SASU',
+            '54'=>'SA','65'=>'GIE','92'=>'Association','93'=>'Fondation',
         );
-        // Correspondance approximative par préfixe
-        foreach ($labels as $k => $v) {
-            if (substr($code, 0, 2) == substr($k, 0, 2)) return $v;
-        }
-        return $code;
+        return isset($labels[$prefix]) ? $labels[$prefix] : '';
     }
 }
