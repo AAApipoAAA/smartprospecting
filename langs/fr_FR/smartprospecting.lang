@@ -1,0 +1,73 @@
+# SmartProspecting - Fichier de traduction FR
+# Copyright (C) 2024 SmartProspecting Module
+
+Module100Name=SmartProspecting
+Module100Desc=Prospection intelligente - Trouvez et importez vos prospects automatiquement
+
+# Menus
+SmartProspecting=SmartProspecting
+NouvelleRecherche=Nouvelle recherche
+HistoriqueImports=Historique imports
+SequencesRelance=Séquences de relance
+Configuration=Configuration
+About=À propos
+
+# Labels généraux
+SearchSession=Session de recherche
+SearchSessionList=Historique des recherches
+NewSearch=Nouvelle recherche
+Source=Source
+Status=Statut
+NbResults=Résultats trouvés
+NbImported=Importés
+NbDuplicates=Doublons
+NbErrors=Erreurs
+Score=Score
+
+# Statuts
+StatusDraft=Brouillon
+StatusRunning=En cours
+StatusDone=Terminé
+StatusError=Erreur
+
+# Sources
+SourceINSEE=INSEE SIRENE
+SourcePappers=Pappers.fr
+SourceGoogle=Google Places
+
+# Messages
+ImportSuccess=Import réussi
+ImportDuplicate=Doublon ignoré
+ImportError=Erreur lors de l'import
+ConfigSaved=Configuration sauvegardée
+ApiKeyMissing=Clé API manquante
+
+# Labels prospects
+ProspectNom=Nom de l'entreprise
+ProspectSiret=SIRET
+ProspectNaf=Code NAF
+ProspectVille=Ville
+ProspectEffectif=Effectif
+ProspectDirigeant=Dirigeant
+ProspectEmail=Email
+ProspectTel=Téléphone
+
+# Séquences
+SequenceLabel=Nom de la séquence
+SequenceSteps=Étapes
+SequenceType=Type d'étape
+StepEmail=Email
+StepCall=Appel
+StepTask=Tâche
+StepSms=SMS
+DelaiJours=Délai (jours)
+
+# Dashboard
+TotalImported=Total importés
+ThisMonth=Ce mois
+SearchesDone=Recherches
+ImportRate=Taux d'import
+QuickActions=Actions rapides
+RecentSearches=Dernières recherches
+NoSearchYet=Aucune recherche effectuée pour l'instant.
+LaunchFirstSearch=Lancer ma première recherche

@@ -1,0 +1,30 @@
+# SmartProspecting .gitignore
+
+# Configuration locale (clés API, etc.)
+admin/config.local.php
+config.local.php
+
+# Logs
+*.log
+logs/
+
+# Cache
+cache/
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# PHP
+*.phar
+
+# Composer (si utilisé plus tard)
+vendor/
+composer.lock
